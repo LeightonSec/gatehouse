@@ -1,2 +1,20 @@
+# Private notes and local agent settings
 .private/
 .claude/
+
+# Terraform: provider downloads, state, variable values, plans
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# The provider lock file IS committed (CLAUDE.md rule 5): do not ignore .terraform.lock.hcl

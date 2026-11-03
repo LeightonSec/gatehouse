@@ -21,11 +21,20 @@ Local background notes may exist outside version control. They predate the decis
 3. **No secrets, anywhere.** No keys, connection strings, tokens, tenant or subscription IDs in the repo. Identity-based auth only. If something seems to need a secret, stop and ask.
 4. **Fail closed.** Any screening, validation or check that errors, times out or can't parse must block, never pass. Silent fail-open is a defect.
 5. **Pin everything.** GitHub Actions pinned to commit SHAs; Terraform provider lock file committed.
-6. **No `terraform apply` or `destroy` from a local machine.** Read-only `az` and `terraform plan` are fine. **Sole exception:** the `bootstrap/` root (D6), which only Leighton applies, by hand. You never apply or destroy it, even if asked mid-task: stop and hand him the command.
+6. **No `terraform apply` or `destroy` from a local machine.** Read-only `az` and `terraform plan` are fine. **Sole exception:** the `bootstrap/` root (D6), which only Leighton applies, by hand. You never apply or destroy it, even if asked mid-task: stop and hand him the command. The same applies to `scripts/configure-github.sh` and any change to GitHub repository settings: only Leighton runs them.
 7. **Not sure? Ask.** Don't guess at Azure behaviour; check the docs or run a read-only command, and say which you did.
+8. **No plan files in the repo.** `terraform plan` output contains subscription and tenant IDs. Show Leighton summaries only, and never save a plan file inside the repo.
+9. **The repo is the master copy.** Changes to committed files arrive as exact old-text/new-text edits, applied with your edit tool, which refuses any edit whose old text doesn't match exactly once. If a whole replacement file must come in, diff it against the committed version and show Leighton every difference before copying it.
 
 ## Current phase
 Phase 1: Foundations. Gate criteria are at the bottom of `DECISIONS.md`.
 
-## Current task (read-only, no code)
-Verify the open item in D7: does GitHub Actions OIDC work with a federated credential on a **user-assigned managed identity** (not an app registration)? Check Microsoft's and GitHub's official docs, quote the relevant lines with links, and note any limits (for example, subject formats or a maximum number of federated credentials). Also check: can a **Free Trial** subscription request additional Azure OpenAI / Foundry model quota (specifically DataZoneStandard for `gpt-5.4-mini` in Sweden Central), or does it have to be upgraded to pay-as-you-go first? If the docs don't say clearly, report that rather than guess. Do not edit `DECISIONS.md`: Leighton locks decisions.
+## Current task: draft the bootstrap for review (no apply)
+Prerequisite: Leighton installs Terraform himself, after his soak-time check. Until `terraform version` works, stop and tell him.
+
+Draft, for Leighton's line-by-line review (T17):
+1. `bootstrap/`: a Terraform root implementing D6, D7 and D8 using only azurerm and azuread, with providers pinned to releases at least 7 days old and `.terraform.lock.hcl` committed. It creates the state storage account, the resource groups, the deploy user-assigned managed identity and its federated credential (subject built from tfvars per D7), the deploy identity's role assignments, and the three app registrations. It **outputs** the client, tenant and subscription IDs. Include a `terraform.tfvars.example` with placeholders only.
+2. `scripts/configure-github.sh`, exactly as D7 describes.
+3. A short note listing every resource and role assignment the bootstrap creates, so Leighton can check the read-back against it.
+
+Propose the file layout first and wait for Leighton's OK before writing code. Run `terraform fmt` and `terraform validate`; run `plan` only if Leighton asks, and share a summary only. Never apply or destroy, and never run the script.
