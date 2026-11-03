@@ -23,7 +23,7 @@ Commit history is part of the portfolio value, and a public repo forces the no-s
 - Optional later: a one-hour experiment in a scratch resource group to measure the Foundry route's real billing, written up as supporting evidence.
 
 ## D4. Model host: Foundry resource + project + model deployment, Entra-only
-**LOCKED** · 2026-11-02 · amended 2026-11-03 (version pin and key-auth proof from Phase 0; separate judge model resource)
+**LOCKED** · 2026-11-02 · amended 2026-11-03 (version pin and key-auth proof from Phase 0; separate judge model resource; system-assigned gateway and judge identities)
 - Local (key) auth disabled on every Foundry resource. On each model resource, exactly one managed identity holds a data-plane role (see "Two model resources" below).
 - **Target model:** `gpt-5.4-mini` on the **DataZoneStandard** (EU data zone) deployment type. Generally available, retires 2027-09-21, and offered on the EU data zone in Sweden Central and all three DR candidates.
 - **Rejected:** `gpt-5.1` on Standard (Sweden-only processing). Full-size model, and no DR candidate offers it at the same level, so failover would silently widen where prompts are processed. `gpt-5-nano` retires 2027-02-09, too soon. GlobalStandard as the target: processing anywhere in the world contradicts the project's governance story.
@@ -31,6 +31,7 @@ Commit history is part of the portfolio value, and a public repo forces the no-s
 - **Model version pinned, automatic upgrades off** (`version_upgrade_option = "NoAutoUpgrade"`). An auto-upgrade mid-project would make Phase 3 detection measurements incomparable. At retirement the deployment stops rather than silently changing; the retirement date is tracked above.
 - **Key auth off is a tested control, not a setting.** Proven in the Phase 0 sandbox (see `docs/phase-0-sandbox.md`): with `disableLocalAuth` on, keys cannot be listed, a key captured beforehand is refused (403), and an Entra token still works (200). Phase 2 repeats this as an automated gate check.
 - **Two model resources, exactly one data-plane identity each.** The app model resource is callable only by the gateway's managed identity. A separate judge model resource (same region, deployment type and pinning rules) is callable only by the judge's managed identity. A manipulated judge therefore cannot reach the app model.
+  - **The gateway and judge use system-assigned managed identities.** Microsoft's docs state that federated credentials can't be configured on system-assigned identities, so nothing outside Azure can ever act as them, even if the pipeline is compromised. Their model access is an ordinary Azure role granted by CI (D7).
   - Rejected: routing the judge through the gateway (needs a route that skips screening, and couples the two so one failing breaks both).
   - Rejected: a second deployment on the same resource (role assignments are believed to apply to the whole resource rather than one deployment; unverified, and this design avoids depending on it).
   - Model quota is shared across both resources in the region.
@@ -52,12 +53,15 @@ The free trial subscription has zero quota for every EU data zone and Standard o
 
 ## D6. Infrastructure as code: Terraform with azurerm + azapi
 **LOCKED** · 2026-11-03
-- azurerm for core resources; azapi where Foundry features are not yet in azurerm (Microsoft's own guidance); **azuread for Entra objects** (the app registrations), used only in the bootstrap.
+- azurerm for core resources; azapi where Foundry features are not yet in azurerm (Microsoft's own guidance); **azuread for Entra objects** (the gateway's app registration and its role grants), used only in the bootstrap.
 - Terraform and every provider are pinned to releases at least 7 days old, per the standing soak-time rule.
 - **Plan files are never saved to the repo.** A plan contains subscription and tenant IDs; only summaries are shared.
 - Remote state in a dedicated storage account, bootstrapped separately from the main stack, with versioning on and public access off.
 - Provider lock file committed. Modules: `identity`, `gateway`, `model`, `screening`, `observability`, `governance`.
-- **Bootstrap:** a separate, minimal `bootstrap/` Terraform root creates what CI cannot create for itself: the state storage account, the deploy identity and its GitHub federated credential, the project resource groups, the deploy identity's role assignments, and the Entra app registrations for the simulated apps (D8).
+- **Bootstrap:** a separate, minimal `bootstrap/` Terraform root creates what CI cannot create for itself: the state storage account, the deploy identity and its GitHub federated credential, two resource groups (below), the deploy identity's role assignments, the gateway's Entra app registration, and the three app identities with their gateway role (D8).
+  - **Two resource groups.** `rg-gatehouse-bootstrap` holds the state storage account, the deploy identity and the app identities; the deploy identity has no control rights there except Managed Identity Operator on each app identity (D7), plus data access to the state container. `rg-gatehouse` is where CI deploys. If the deploy identity controlled its own resource group, it could add a federated credential to itself trusting any branch (bypassing the reviewer rule) or weaken the state storage.
+  - **Read-back:** `scripts/verify-bootstrap.sh`, run by Leighton after each apply, uses read-only `az` commands to compare the federated credential's subject with the expected value and to list every role assignment the deploy identity holds, exiting non-zero on any mismatch. (azurerm and azuread can't re-read a federated credential.)
+  - **State backup:** an encrypted copy of the bootstrap state is kept outside the Mac after each apply. It holds IDs, not secrets.
   - The **only** Terraform ever applied from a local machine, and only by Leighton (CLAUDE.md rule 6 exception).
   - Kept as small as possible: it is the most privileged code in the repo.
   - Its state is local and gitignored. It holds no secrets by design.
@@ -65,7 +69,7 @@ The free trial subscription has zero quota for every EU data zone and Standard o
   - Rejected: an `az` script (hard to review, no record of intended state, drifts) and the portal (not repeatable).
 
 ## D7. CI/CD: GitHub Actions with OIDC, no stored secrets
-**LOCKED** · 2026-11-03 · amended 2026-11-03 (managed identity confirmed; GitHub immutable subject format)
+**LOCKED** · 2026-11-03 · amended 2026-11-03 (managed identity confirmed; GitHub immutable subject format; scoped rights) · placement of subscription-wide governance **OPEN** for Phase 4
 - Deploy identity: a **user-assigned managed identity** with a federated credential, so no client secret ever exists. Confirmed supported for GitHub Actions in Microsoft's docs ("Create trust between a user-assigned managed identity and an external identity provider", checked 2026-11-03).
 - Federated credential pinned to a GitHub **environment** subject, not to the whole repo.
   - **This repo uses GitHub's immutable subject format** (repos created after 15 July 2026). GitHub's API reports `use_immutable_subject: true`, so the subject has the form `repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:azure`. The prefix comes from GitHub's API; the `:environment:azure` ending follows GitHub's documented pattern and is proven by the first CI login.
@@ -84,12 +88,18 @@ The free trial subscription has zero quota for every EU data zone and Standard o
 - PRs from forks never receive cloud credentials. This matters because the repo is public.
 - All actions pinned to commit SHAs. security-gate and an IaC scanner (Checkov or tfsec) are required checks that fail closed.
 - **The deploy identity holds no Microsoft Graph permissions.** It cannot create or change Entra app registrations or users; those are created in the bootstrap (D6).
-- Deploy identity scoped to the project resource groups. Role assignments use RBAC Administrator with a condition limiting which roles it can grant, not Owner.
+- **Deploy identity's rights:** Contributor and a constrained RBAC Administrator on `rg-gatehouse` only, never Owner; data access to the state container only. The RBAC Administrator condition limits grantable roles to the model data-plane role (D4); more are added only when a later phase proves a need.
+- **Managed Identity Operator is granted separately on each app identity, never on `rg-gatehouse-bootstrap`.** Granted on the group, it would also cover the deploy identity itself, letting a compromised run attach the deploy identity to a container it controls and keep its rights outside the reviewer gate.
+- **No subscription-level roles.** Separation of duties: the deploy identity never manages the guardrails that constrain it (policy, the subscription Activity log export). Where those subscription-wide pieces live, in the bootstrap or a separate layer Leighton applies, is **OPEN** and decided before Phase 4.
 
 ## D8. App authentication at the gateway: Entra tokens, no subscription keys
-**LOCKED** · 2026-11-03
-- Each simulated app gets its own Entra app registration, **created in the bootstrap (D6), not by CI**. Adding an app later means a reviewed bootstrap run.
-- Gateway validates issuer, audience and an allowlist of app IDs, then keys token quotas on the app ID claim.
+**LOCKED** · 2026-11-03 · amended 2026-11-03 (managed identities for the apps; one gateway app registration)
+- **Each simulated app runs as its own Container Apps job with its own user-assigned managed identity.** Managed identities get tokens with no secret, certificate or app registration (rule 3).
+- **One Entra app registration represents the gateway API:** the audience the apps request tokens for. It defines an `invoke` app role, with assignment required, granted to the three app identities.
+- The app identities, the gateway registration and the role grants are **created in the bootstrap (D6), not by CI.** Granting an app role is an Entra (Graph) operation, and the deploy identity has no Graph permissions (D7). Adding an app later means a reviewed bootstrap run.
+- The app identities live in `rg-gatehouse-bootstrap`, so the deploy identity **cannot add a federated credential to one**, which would let something outside Azure act as that app and outlive the pipeline run. The deploy identity does still choose what code runs as each app when it deploys them; the `azure` environment's reviewer rule is the control for that.
+- **The gateway checks the token itself:** issuer, audience, an allowlist of the three app identities, **and that the `roles` claim contains `invoke`**. Whether Entra also refuses to issue app-only tokens to unassigned identities is **unverified**; Phase 2 tests it with an unassigned identity. The gateway check holds either way.
+- Token quotas are keyed on the calling identity's client ID claim.
 - API Management subscription keys are not used, so there is no shared secret to leak.
 
 ## D9. Screening: two layers in series, fail closed

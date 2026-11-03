@@ -33,7 +33,7 @@ Phase 1: Foundations. Gate criteria are at the bottom of `DECISIONS.md`.
 Prerequisite: Leighton installs Terraform himself, after his soak-time check. Until `terraform version` works, stop and tell him.
 
 Draft, for Leighton's line-by-line review (T17):
-1. `bootstrap/`: a Terraform root implementing D6, D7 and D8 using only azurerm and azuread, with providers pinned to releases at least 7 days old and `.terraform.lock.hcl` committed. It creates the state storage account, the resource groups, the deploy user-assigned managed identity and its federated credential (subject built from tfvars per D7), the deploy identity's role assignments, and the three app registrations. It **outputs** the client, tenant and subscription IDs. Include a `terraform.tfvars.example` with placeholders only.
+1. `bootstrap/`: a Terraform root implementing D6, D7 and D8 using only azurerm and azuread, with providers pinned to releases at least 7 days old and `.terraform.lock.hcl` committed. It creates the state storage account, the resource groups, the deploy user-assigned managed identity and its federated credential (subject built from tfvars per D7), the deploy identity's role assignments, the gateway's app registration, and the three app identities with their gateway role (D8). The bootstrap **outputs** the client, tenant and subscription IDs. Also draft `scripts/verify-bootstrap.sh` (D6). Include a `terraform.tfvars.example` with placeholders only.
 2. `scripts/configure-github.sh`, exactly as D7 describes.
 3. A short note listing every resource and role assignment the bootstrap creates, so Leighton can check the read-back against it.
 
