@@ -48,6 +48,7 @@ Screening (T2, T5, T7, T16) is probabilistic. Prompt Shields, the guardrail and 
 - **Network exposure:** the gateway and model use public endpoints locked down by identity, not private networking. Private endpoints are a Phase 6 stretch (D12).
 - **Quota overshoot:** `llm-token-limit` can be briefly exceeded by near-concurrent requests (documented behaviour). Measured and recorded, not prevented.
 - **Global processing during development (D4):** until EU data zone quota is granted, the model runs on GlobalStandard, so prompts may be processed outside the EU. Accepted because all traffic is synthetic (D10). Switched before the Phase 6 write-up, or recorded in the README as a known limitation if quota is refused.
+- **Terraform's go-getter (D6):** Terraform 1.17.1 (pinned), 1.17.0, 1.16.7 and the development branch are all built with go-getter 1.8.6, affected by HCSEC-2026-39 and HCSEC-2026-44. Not reachable through module downloads while all modules are local (D6). Whether Terraform's provider installer also uses go-getter is unverified. Terraform is upgraded once a release with go-getter 1.8.10 or later passes the soak.
 
 ## Sign-off
 - [x] Reviewed and signed off by Leighton, 2026-11-03

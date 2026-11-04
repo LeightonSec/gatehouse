@@ -23,7 +23,7 @@ Commit history is part of the portfolio value, and a public repo forces the no-s
 - Optional later: a one-hour experiment in a scratch resource group to measure the Foundry route's real billing, written up as supporting evidence.
 
 ## D4. Model host: Foundry resource + project + model deployment, Entra-only
-**LOCKED** · 2026-11-02 · amended 2026-11-03 (version pin and key-auth proof from Phase 0; separate judge model resource; system-assigned gateway and judge identities)
+**LOCKED** · 2026-11-02 · amended 2026-11-03 (version pin and key-auth proof from Phase 0; separate judge model resource; system-assigned gateway and judge identities) · amended 2026-11-04 (data-plane role named)
 - Local (key) auth disabled on every Foundry resource. On each model resource, exactly one managed identity holds a data-plane role (see "Two model resources" below).
 - **Target model:** `gpt-5.4-mini` on the **DataZoneStandard** (EU data zone) deployment type. Generally available, retires 2027-09-21, and offered on the EU data zone in Sweden Central and all three DR candidates.
 - **Rejected:** `gpt-5.1` on Standard (Sweden-only processing). Full-size model, and no DR candidate offers it at the same level, so failover would silently widen where prompts are processed. `gpt-5-nano` retires 2027-02-09, too soon. GlobalStandard as the target: processing anywhere in the world contradicts the project's governance story.
@@ -32,6 +32,7 @@ Commit history is part of the portfolio value, and a public repo forces the no-s
 - **Key auth off is a tested control, not a setting.** Proven in the Phase 0 sandbox (see `docs/phase-0-sandbox.md`): with `disableLocalAuth` on, keys cannot be listed, a key captured beforehand is refused (403), and an Entra token still works (200). Phase 2 repeats this as an automated gate check.
 - **Two model resources, exactly one data-plane identity each.** The app model resource is callable only by the gateway's managed identity. A separate judge model resource (same region, deployment type and pinning rules) is callable only by the judge's managed identity. A manipulated judge therefore cannot reach the app model.
   - **The gateway and judge use system-assigned managed identities.** Microsoft's docs state that federated credentials can't be configured on system-assigned identities, so nothing outside Azure can ever act as them, even if the pipeline is compromised. Their model access is an ordinary Azure role granted by CI (D7).
+  - **The data-plane role is Cognitive Services OpenAI User**, for both the gateway and the judge. Microsoft's API Management documentation names it for a managed identity calling a Foundry resource, and of the built-in roles that can call chat completions it is the narrowest on the OpenAI path: no key listing, no deployment changes (all built-in roles checked 2026-11-04). It still permits other inference operations such as embeddings, images, assistants and realtime; the gateway exposes only chat completions. A custom role holding only the chat completions data action is a Phase 2 hardening option. If Phase 2 routes the gateway through the Foundry project endpoint instead, this choice is reopened.
   - Rejected: routing the judge through the gateway (needs a route that skips screening, and couples the two so one failing breaks both).
   - Rejected: a second deployment on the same resource (role assignments are believed to apply to the whole resource rather than one deployment; unverified, and this design avoids depending on it).
   - Model quota is shared across both resources in the region.
@@ -52,9 +53,10 @@ The free trial subscription has zero quota for every EU data zone and Standard o
 - Sources: `az cognitiveservices model list`, the API Management SKU list via `az rest`, and Microsoft Learn's Content Safety region availability page (dated 2026-09-18).
 
 ## D6. Infrastructure as code: Terraform with azurerm + azapi
-**LOCKED** · 2026-11-03
+**LOCKED** · 2026-11-03 · amended 2026-11-04 (local module sources only)
 - azurerm for core resources; azapi where Foundry features are not yet in azurerm (Microsoft's own guidance); **azuread for Entra objects** (the gateway's app registration and its role grants), used only in the bootstrap.
 - Terraform and every provider are pinned to releases at least 7 days old, per the standing soak-time rule.
+- **Local module sources only.** Every module is a local folder: no registry, Git, S3, GCS or archive sources. Terraform downloads remote modules with go-getter, and Terraform 1.17.1 (pinned), 1.17.0, 1.16.7 and the development branch (checked 2026-11-04) are all built with go-getter 1.8.6, which is affected by HCSEC-2026-39 and HCSEC-2026-44. With local modules, neither flaw is reachable through module downloads. CI fails if any module `source` doesn't start with `./` or `../`. Revisited once a Terraform release built with go-getter 1.8.10 or later passes the soak.
 - **Plan files are never saved to the repo.** A plan contains subscription and tenant IDs; only summaries are shared.
 - Remote state in a dedicated storage account, bootstrapped separately from the main stack, with versioning on and public access off.
 - Provider lock file committed. Modules: `identity`, `gateway`, `model`, `screening`, `observability`, `governance`.
