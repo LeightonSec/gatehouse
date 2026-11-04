@@ -108,7 +108,7 @@ The free trial subscription has zero quota for every EU data zone and Standard o
 2. Leighton's judge (ai-firewall / llm-honeypot semantic layer) on Container Apps, with its own managed identity and its own model resource (D4).
 - If either layer errors, times out or returns something unparseable, the request is **blocked**, not passed. This applies the fail-open audit rule from security-gate.
 - The judge treats prompts as untrusted data: delimited input, structured output only, no tool access. This also closes the standing TODO on LLM-layer input isolation for ai-firewall.
-- **OPEN sub-question for Phase 3:** run Prompt Shields as a separate Content Safety resource called from gateway policy, or as a Foundry guardrail on the model deployment. It affects which regions qualify (see D5). Known limits either way: 10,000-character prompts, trained mainly on English.
+- **OPEN sub-question for Phase 3:** run Prompt Shields as a separate Content Safety resource called from gateway policy, or as a Foundry guardrail on the model deployment. One factor: abuse monitoring scores traffic to the models, while the Code of Conduct says "Transmitting harmful content to Content Safety through the intended use of the service will not by itself be considered a violation". Screening as a separate resource *before* the model therefore keeps most attack traffic out of what gets scored (T18). It affects which regions qualify (see D5). Known limits either way: 10,000-character prompts, trained mainly on English.
 - **Phase 0 data point:** the default Foundry guardrail (`Microsoft.DefaultV2`) blocked a textbook jailbreak at user input. Its own panel lists **no controls** for indirect prompt injection, sensitive data leakage or task drift. So the guardrail is configured explicitly in Terraform; "the default guardrail is on" is not claimed as a control. Guardrail results are returned in every response (`prompt_filter_results`), which Phase 4 can log and detect on.
 - **Response-side screening: in scope for Phase 3** (moved from D12, 2026-11-03, on the Phase 0 guardrail findings). The judge also screens model **output** before it reaches the app, for system-prompt leakage and sensitive content.
   - Same fail-closed rule: if response screening errors or times out, the response is withheld, not passed.
@@ -168,6 +168,34 @@ The Phase 3 detection and false-positive rates are the project's headline eviden
   - **Share-alike (SA) datasets may be committed**, in their own folder with their licence alongside. Share-alike binds only those data files, not the code. A deliberate choice to keep useful public attack corpora available.
 - **Vulnerability reports** go through GitHub's private vulnerability reporting, as described in `SECURITY.md`. No email address is published.
 
+## D15. Regulatory alignment: built in, not retrofitted
+**LOCKED** · 2026-11-04
+
+Gatehouse is not claimed to be in scope of any of these laws. It is designed so that an organisation that *is* in scope could use the same design to meet its obligations, and the evidence is kept as the build goes. Not legal advice. Sources were checked on 2026-11-04 and are listed in the map, primary sources first.
+
+- **`docs/compliance-map.md` grows with the build.** Every phase gate updates it: each control, where it is implemented, the test that proves it (THREAT_MODEL.md), and the obligation it supports. Covered:
+  - **NIS2**, implemented in Sweden by the Cybersecurity Act (SFS 2025:1506, in force 15 January 2026): the security measures, and the incident clock in chapter 2: notification within 24 hours of becoming aware of a significant incident (section 5), within 72 hours (section 6), and a final report within one month (section 8).
+  - **CRA** (Regulation (EU) 2024/2847): reporting obligations (Article 14) apply from 11 September 2026; fully applicable from 11 December 2027 (European Commission).
+  - **AI Act**: Gatehouse is a governance control for AI deployers, not a high-risk system. The Digital Omnibus on AI (Regulation (EU) 2026/1744) entered into force on 27 July 2026 (EUR-Lex). Its new high-risk dates (2 December 2027 for Annex III, 2 August 2028 for Annex I) come from two independent secondary sources and are **not yet verified against the regulation's text**.
+  - **GDPR**: cross-referenced to D10 (synthetic data, production redaction) and D13 (personal-data review of captured attacker prompts).
+- **Built CRA-ready by default.**
+  - As a public portfolio repo, Gatehouse is likely outside the CRA: free and open-source software "not monetised by their manufacturers" is not a commercial activity (recital 18), and hosting on an open repository alone is not making a product available (recital 20).
+  - **The line to watch:** charging for technical support beyond cost recovery can be a commercial activity (recital 15). **Deploying or supporting Gatehouse for paying clients would likely make Leighton a manufacturer**, so a CRA assessment comes before any paid use.
+  - It is built as if in scope anyway, so that line can be crossed without a retrofit: **an SBOM (CycloneDX) is generated in CI** on every build of `main` and attached to releases (D7 pipeline); vulnerability disclosure via `SECURITY.md` (in place); pinned dependencies (rule 5); a short support and update statement in the README.
+- **NIS2 detection-to-notification timing is measured.** Phase 4 detections record when an incident becomes known, and the Phase 5 drill shows whether the 24-hour notification could be met from that moment.
+
+## D16. Testing conduct on Microsoft services
+**LOCKED** · 2026-11-04
+
+Phase 3 deliberately sends attacks at the project's own deployments. Microsoft permits and recommends this within limits, and the limits shape the tests. Sources: the Microsoft Enterprise AI Services Code of Conduct (version 4.0, 1 May 2026; it replaced the separate Azure OpenAI code), the Penetration Testing Rules of Engagement summary, and the red-teaming guidance (all checked 2026-11-04).
+
+- **Allowed:** the Code of Conduct permits otherwise-prohibited content "solely (1) to evaluate, train, fine-tune, and improve safety systems and applications for the customer's use". The Rules of Engagement explicitly encourage activities including "attempting to break out of AI system boundaries", and Microsoft recommends red teaming your own LLM applications. No advance notice is needed to test resources you own.
+- **High-Risk Content is out of scope.** Microsoft defines two High-Risk categories: "Malicious cyber activity" and CBRN weapons. Safeguards for both are mandatory for all customers, and intentionally generating or attempting to generate either needs prior approval "through the applicable Limited Access Service program", a formal application. For a security project the cyber category is the one to watch: **any attack prompt asking the model to write malware, exploit code or similar is High-Risk.** So:
+  - The attack set (D13) contains **no payloads aimed at producing either High-Risk category**, and captured honeypot prompts are filtered for them before replay.
+  - Injection success is measured with **harmless objectives**: leaking the canary string (D9), revealing the system prompt, or emitting a marker word. This measures whether the screens hold without generating anything harmful.
+- **No denial-of-service testing.** The Rules of Engagement prohibit "Denial of Service (DoS) testing of any kind" and automated testing that "generates excessive traffic". Quota tests (T3) use the minimum traffic needed to cross a deliberately small quota; corpus replays are modest and batched.
+- **An authorisation note is kept ready:** what is tested, against which resources, and why. If Azure's abuse detection flags the testing (T18), Microsoft's guidance is to respond with the authorisation and a description of the in-scope activity.
+
 ---
 
 ## Phase 1 gate: pass criteria
@@ -175,3 +203,4 @@ The Phase 3 detection and false-positive rates are the project's headline eviden
 - [x] Threat model reviewed and signed off (2026-11-03).
 - [ ] Full `apply` and `destroy` round trip from CI, with zero secrets stored in GitHub or the repo.
 - [ ] Gate security checklist: critical-property check, data provenance, scanner coverage, dependency surface, deferrals recorded.
+- [ ] `docs/compliance-map.md` updated for this phase's controls (D15). Every later phase gate carries the same item.
