@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Never commit real values (D2).
+
+subscription_id = "<subscription GUID: az account show --query id -o tsv>"
+tenant_id       = "<tenant GUID: az account show --query tenantId -o tsv>"
+
+# Globally unique, 3 to 24 lowercase letters and digits.
+state_storage_account_name = "<for example stgatehousetfstate plus a short suffix>"
+
+# Numeric IDs for GitHub's immutable OIDC subject (D7):
+#   gh api repos/LeightonSec/gatehouse --jq '{owner_id: .owner.id, repo_id: .id}'
+github_owner_id = "<numeric owner ID>"
+github_repo_id  = "<numeric repo ID>"
