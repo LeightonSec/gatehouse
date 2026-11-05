@@ -29,12 +29,15 @@ Local background notes may exist outside version control. They predate the decis
 ## Current phase
 Phase 1: Foundations. Gate criteria are at the bottom of `DECISIONS.md`.
 
-## Current task: draft the bootstrap for review (no apply)
-Prerequisite: Leighton installs Terraform himself, after his soak-time check. Until `terraform version` works, stop and tell him.
+## Current task: take the bootstrap to a verified apply (Leighton applies)
+State on 2026-11-05: the bootstrap is committed (9d67c75), and so is the hardening (b09f527 decisions, b044120 code). Nothing has been applied to Azure.
 
-Draft, for Leighton's line-by-line review (T17):
-1. `bootstrap/`: a Terraform root implementing D6, D7 and D8 using only azurerm and azuread, with providers pinned to releases at least 7 days old and `.terraform.lock.hcl` committed. It creates the state storage account, the resource groups, the deploy user-assigned managed identity and its federated credential (subject built from tfvars per D7), the deploy identity's role assignments, the gateway's app registration, and the three app identities with their gateway role (D8). The bootstrap **outputs** the client, tenant and subscription IDs. Also draft `scripts/verify-bootstrap.sh` (D6). Include a `terraform.tfvars.example` with placeholders only.
-2. `scripts/configure-github.sh`, exactly as D7 describes.
-3. A short note listing every resource and role assignment the bootstrap creates, so Leighton can check the read-back against it.
+Remaining, in order. Steps marked (L) are Leighton's alone. You prepare the commands and check the output.
+1. Signature checks (D6), all (L): `codesign` and `spctl` on the installed Terraform, in his own shell; gnupg after its soak check; HashiCorp's key fingerprint compared against two HashiCorp pages, never taken from memory; `gpg --verify` on Terraform's SHA256SUMS and both providers' SHA256SUMS. Download the files into a temporary folder, never into the repo.
+2. Register `Microsoft.Storage` and `Microsoft.ManagedIdentity` (L). Create `bootstrap/terraform.tfvars` from the example (L). Never read, print or copy its values.
+3. Plan (L): `CHECKPOINT_DISABLE=1`, `init -lockfile=readonly`, then `plan`. Share a summary only, and never save a plan file (rule 8). The role postcondition runs here for the first time.
+4. Apply (L, rule 6). Then `bash scripts/verify-bootstrap.sh` (L). Fix any expected-value mismatch with a reviewed edit, never by loosening a check. Then an encrypted backup of the state, outside the Mac (L).
+5. Create the `azure` environment as `bootstrap/README.md` describes (L). Before relying on the admin-bypass check, confirm `can_admins_bypass` appears in the environment's API response; if it doesn't, stop and report. Then `bash scripts/configure-github.sh` (L).
+6. Then the CI pipeline (D7), including D6's CI supply-chain checks from the Phase 1 gate.
 
-Propose the file layout first and wait for Leighton's OK before writing code. Run `terraform fmt` and `terraform validate`; run `plan` only if Leighton asks, and share a summary only. Never apply or destroy, and never run the script.
+Standing rules for this work: every `!` command fits on one terminal line; the scripts stay mode 100644 and run with `bash`; Terraform never runs with sudo.
