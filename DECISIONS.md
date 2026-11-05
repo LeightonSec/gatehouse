@@ -53,10 +53,19 @@ The free trial subscription has zero quota for every EU data zone and Standard o
 - Sources: `az cognitiveservices model list`, the API Management SKU list via `az rest`, and Microsoft Learn's Content Safety region availability page (dated 2026-09-18).
 
 ## D6. Infrastructure as code: Terraform with azurerm + azapi
-**LOCKED** · 2026-11-03 · amended 2026-11-04 (local module sources only)
+**LOCKED** · 2026-11-03 · amended 2026-11-04 (local module sources only) · amended 2026-11-05 (locked, registry-only provider installs)
 - azurerm for core resources; azapi where Foundry features are not yet in azurerm (Microsoft's own guidance); **azuread for Entra objects** (the gateway's app registration and its role grants), used only in the bootstrap.
 - Terraform and every provider are pinned to releases at least 7 days old, per the standing soak-time rule.
 - **Local module sources only.** Every module is a local folder: no registry, Git, S3, GCS or archive sources. Terraform downloads remote modules with go-getter, and Terraform 1.17.1 (pinned), 1.17.0, 1.16.7 and the development branch (checked 2026-11-04) are all built with go-getter 1.8.6, which is affected by HCSEC-2026-39 and HCSEC-2026-44. With local modules, neither flaw is reachable through module downloads. CI fails if any module `source` doesn't start with `./` or `../`. Revisited once a Terraform release built with go-getter 1.8.10 or later passes the soak.
+- **Locked, registry-only provider installs.** Terraform 1.17.1 also uses go-getter to unzip providers, but only after checking HashiCorp's signature and the lock-file hash (read in its source at the v1.17.1 tag, 2026-11-04). The signature check applies only to registry installs, and the hash check only to providers already in the lock file. So:
+  - Providers come only from the Terraform registry: no `provider_installation` block, no filesystem or network mirrors, no `-plugin-dir`, and `plugin_cache_may_break_dependency_lock_file` off.
+  - Before every init, a check confirms that the providers in `required_providers` and the entries in `.terraform.lock.hcl` are exactly the same set, at exactly the pinned versions. Init then runs with `-lockfile=readonly`. The check is built with the CI pipeline, before the Phase 1 gate; until then, `-lockfile=readonly` is the protection.
+  - A new lock file's hashes are checked against each provider's SHA256SUMS, with that file's signature verified against HashiCorp's key.
+  - Terraform never runs with sudo, and the repo folder is `chmod 700`. That removes HCSEC-2026-39's remaining condition.
+  - The Terraform binary is verified against HashiCorp's signed SHA256SUMS before it is used against Azure, locally and in CI. The key's fingerprint is taken from two HashiCorp pages, never from memory.
+  - `CHECKPOINT_DISABLE=1` is set, so Terraform doesn't contact HashiCorp on every run.
+  - A weekly read-only workflow checks go-getter in the latest Terraform and OpenTofu releases, and opens an issue in this repo when either reaches 1.8.10.
+  - Rejected: building Terraform with a patched go-getter (a binary only Leighton vouches for), and moving to OpenTofu (also on an affected go-getter, checked 2026-11-04).
 - **Plan files are never saved to the repo.** A plan contains subscription and tenant IDs; only summaries are shared.
 - Remote state in a dedicated storage account, bootstrapped separately from the main stack, with versioning on and public access off.
 - Provider lock file committed. Modules: `identity`, `gateway`, `model`, `screening`, `observability`, `governance`.
@@ -71,7 +80,7 @@ The free trial subscription has zero quota for every EU data zone and Standard o
   - Rejected: an `az` script (hard to review, no record of intended state, drifts) and the portal (not repeatable).
 
 ## D7. CI/CD: GitHub Actions with OIDC, no stored secrets
-**LOCKED** · 2026-11-03 · amended 2026-11-03 (managed identity confirmed; GitHub immutable subject format; scoped rights) · placement of subscription-wide governance **OPEN** for Phase 4
+**LOCKED** · 2026-11-03 · amended 2026-11-03 (managed identity confirmed; GitHub immutable subject format; scoped rights) · amended 2026-11-05 (administrators can't bypass the environment) · placement of subscription-wide governance **OPEN** for Phase 4
 - Deploy identity: a **user-assigned managed identity** with a federated credential, so no client secret ever exists. Confirmed supported for GitHub Actions in Microsoft's docs ("Create trust between a user-assigned managed identity and an external identity provider", checked 2026-11-03).
 - Federated credential pinned to a GitHub **environment** subject, not to the whole repo.
   - **This repo uses GitHub's immutable subject format** (repos created after 15 July 2026). GitHub's API reports `use_immutable_subject: true`, so the subject has the form `repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:azure`. The prefix comes from GitHub's API; the `:environment:azure` ending follows GitHub's documented pattern and is proven by the first CI login.
@@ -83,7 +92,7 @@ The free trial subscription has zero quota for every EU data zone and Standard o
 - **GitHub side: no GitHub token ever touches Terraform.** Split three ways:
   - The bootstrap stays Azure-only and **outputs** the three IDs (client, tenant, subscription).
   - `scripts/configure-github.sh`, reviewed like all code, stores them as GitHub **environment secrets**, not variables. On a public repo the Actions logs are public, and only secrets are masked. It then runs the GitHub-side subject check described above. Written for bash, `set -euo pipefail`, with `--repo LeightonSec/gatehouse` on every `gh` call so it can never act on another repo.
-  - The `azure` environment is created **once** by Leighton with `gh`: required reviewer Leighton; deployment branch rule **`main` only**; "prevent self-review" **off** (he is the sole reviewer). It persists through Azure rebuilds; a DR drill only re-runs the script for the new IDs.
+  - The `azure` environment is created **once** by Leighton with `gh`: required reviewer Leighton; deployment branch rule **`main` only**; "prevent self-review" **off** (he is the sole reviewer); **administrator bypass off** (`can_admins_bypass: false`), so even a repo admin token can't skip the gate. The field name is confirmed against the environment's own API response before it is relied on. It persists through Azure rebuilds; a DR drill only re-runs the script for the new IDs.
   - The script is run only by Leighton, interactively, from his own `gh` session, and stores nothing.
   - Rejected: the github Terraform provider in the bootstrap. It needs a GitHub token inside Terraform, Leighton's `gh` token reaches every LeightonSec repo, and it adds another dependency.
 - `fmt` / `validate` run on every PR with no cloud credentials. `plan` and `apply` run only in the protected environment, with Leighton as required reviewer.
@@ -206,3 +215,4 @@ Phase 3 deliberately sends attacks at the project's own deployments. Microsoft p
 - [ ] Full `apply` and `destroy` round trip from CI, with zero secrets stored in GitHub or the repo.
 - [ ] Gate security checklist: critical-property check, data provenance, scanner coverage, dependency surface, deferrals recorded.
 - [ ] `docs/compliance-map.md` updated for this phase's controls (D15). Every later phase gate carries the same item.
+- [ ] D6's CI supply-chain checks built and passing: the pre-init lock-file match, local-only module sources, Terraform binary verification, and the weekly go-getter watch.
