@@ -42,9 +42,12 @@ Exactly these, and nothing at subscription scope. `scripts/verify-bootstrap.sh` 
 - `az login` to the right tenant, as a user who can create resource groups and role assignments in the subscription (Owner) and create app registrations and grant app roles in Entra.
 - Resource providers `Microsoft.Storage` and `Microsoft.ManagedIdentity` registered. The azurerm provider doesn't auto-register: `providers.tf` sets `resource_provider_registrations = "none"` explicitly (also the 5.11.0 default). Check: `az provider show -n Microsoft.Storage --query registrationState -o tsv`.
 - `terraform.tfvars` created from `terraform.tfvars.example`.
+- The repo folder readable only by you (`chmod 700`). Never run Terraform with sudo (D6).
+- `export CHECKPOINT_DISABLE=1` in your shell, so Terraform doesn't contact HashiCorp on every run (D6).
+- The Terraform binary verified against HashiCorp's signed SHA256SUMS (D6).
 
 ## Steps (Leighton only)
-1. `terraform -chdir=bootstrap init`
+1. `terraform -chdir=bootstrap init -lockfile=readonly` (the lock file is committed; init must not change it)
 2. `terraform -chdir=bootstrap plan`, then review. Never save the plan file in the repo (CLAUDE.md rule 8).
 3. `terraform -chdir=bootstrap apply`
 4. `bash scripts/verify-bootstrap.sh`: must print "All bootstrap checks passed."
@@ -53,12 +56,12 @@ Exactly these, and nothing at subscription scope. `scripts/verify-bootstrap.sh` 
 7. Back up `bootstrap/terraform.tfstate`, encrypted, outside the Mac.
 
 ## Creating the `azure` environment (once, by hand)
-Required reviewer: Leighton. Branch policy: `main` only. Prevent self-review: off (sole reviewer). Check these calls against GitHub's REST docs before running them.
+Required reviewer: Leighton. Branch policy: `main` only. Prevent self-review: off (sole reviewer). Administrator bypass: off. Check these calls against GitHub's REST docs before running them.
 
 ```bash
 REVIEWER_ID="$(gh api user --jq .id)"
 gh api -X PUT repos/LeightonSec/gatehouse/environments/azure --input - <<EOF
-{"reviewers":[{"type":"User","id":$REVIEWER_ID}],"prevent_self_review":false,"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}
+{"reviewers":[{"type":"User","id":$REVIEWER_ID}],"prevent_self_review":false,"can_admins_bypass":false,"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}
 EOF
 gh api -X POST repos/LeightonSec/gatehouse/environments/azure/deployment-branch-policies -f name=main -f type=branch
 ```

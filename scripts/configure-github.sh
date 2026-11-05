@@ -4,8 +4,9 @@
 #
 # Steps, in order, stopping at the first failure (rule 4: fail closed):
 #   0. Confirm gh is acting as LeightonSec (more than one account is logged in).
-#   1. Confirm the `azure` environment exists with a required reviewer and a
-#      deployment branch policy (created once by hand, see bootstrap/README.md).
+#   1. Confirm the `azure` environment exists with exactly the expected reviewer,
+#      a main-only branch policy and administrator bypass off (created once by
+#      hand, see bootstrap/README.md).
 #   2. Compare the federated credential's subject in Azure with the subject
 #      GitHub reports for this repo. Nothing is written if they differ.
 #   3. Store the three IDs as environment secrets (masked in public logs).
@@ -78,6 +79,12 @@ BRANCHES="$(gh api "repos/$REPO/environments/$ENVIRONMENT/deployment-branch-poli
   || fail "cannot read the environment's branch policies"
 [[ "$BRANCHES" == "branch|main" ]] || fail "branch policies are '$BRANCHES', expected 'branch|main'"
 echo "PASS: environment '$ENVIRONMENT' can only be used from main"
+
+# Administrators can't bypass the environment's rules (D7). A missing field
+# reads as null and fails closed.
+ADMIN_BYPASS="$(jq -r '.can_admins_bypass' <<<"$ENV_JSON")"
+[[ "$ADMIN_BYPASS" == "false" ]] || fail "can_admins_bypass is '$ADMIN_BYPASS', expected 'false'"
+echo "PASS: administrators can't bypass environment '$ENVIRONMENT'"
 
 # 2. Subject check, before anything is written.
 SUB_JSON="$(gh api "repos/$REPO/actions/oidc/customization/sub")" || fail "cannot read the repo's OIDC subject settings"
